@@ -1,0 +1,214 @@
+steps:
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: Identity
+    entrypoint: 'bash'
+    args:
+    - '-eEuo'
+    - 'pipefail'
+    - '-c'
+    - |-
+      echo "Build ID: $BUILD_ID"
+      echo "Revision ID: $REVISION_ID"
+      echo "Commit SHA: $COMMIT_SHA"
+      echo "Short SHA: $SHORT_SHA"
+      echo "Repo name: $REPO_NAME"
+      echo "Branch name: $BRANCH_NAME"
+      echo "Tag name: $TAG_NAME"
+
+  - name: 'node'
+    id: Install
+    entrypoint: 'npm'
+    args:
+      - 'install'
+    dir: 'src'
+
+  - name: 'node'
+    id: Test
+    entrypoint: 'npm'
+    args:
+      - 'test'
+    dir: 'src'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: Deploy
+    entrypoint: gcloud
+    args:
+      [
+        'beta',
+        'run',
+        'deploy',
+        '$_SERVICE_NAME',
+        '--region=$_REGION',
+        '--platform=managed',
+        '--memory=2Gi',
+        '--source',
+        '.',
+        '--tag=canary',
+        '--no-use-http2', # HTTP2 will break Express
+        '--max-instances=3',
+        '--allow-unauthenticated',
+        '--no-traffic' # REMOVE THIS LINE FOR FIRST DEPLOYMENT: Not supported when creating a new service
+      ]
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: Wait
+    entrypoint: 'bash'
+    args:
+    - '-eEuo'
+    - 'pipefail'
+    - '-c'
+    - |-
+      echo 'Waiting for 10 seconds...'
+      sleep 10
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: SmokeTest
+    entrypoint: 'bash'
+    args:
+    - '-eEuo'
+    - 'pipefail'
+    - '-c'
+    - |-
+      if curl -sL --fail $_CANARY_URL -o /dev/null; then
+        echo "Success"
+      else
+        echo "Fail"
+        exit 1
+      fi
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: CheckErrors
+    entrypoint: 'bash'
+    args:
+    - '-eEuo'
+    - 'pipefail'
+    - '-c'
+    - |-
+      export REVISION_NAME=$(gcloud beta run revisions list --region=$_REGION --platform managed --filter '$_SERVICE_NAME' | head -n 2 | grep -o '$_SERVICE_NAME-[^ ]*')
+      echo "Revision name is $$REVISION_NAME"
+
+      mkdir -p ~/bin && curl -sSL -o ~/bin/jq https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64 && chmod +x ~/bin/jq
+      export PATH=$$PATH:~/bin
+      jq --version
+
+      gcloud logging read \
+      "resource.type=cloud_run_revision \
+      AND resource.labels.service_name=$_SERVICE_NAME \
+      AND resource.labels.revision_name=$$REVISION_NAME \
+      AND severity>=ERROR" \
+      --project $PROJECT_ID \
+      --limit 10 \
+      --format=json | jq -r .[].resource.labels.revision_name > errors.txt
+
+      if (test $(wc -l < errors.txt) -gt 0); then
+        echo "Found errors"
+        cat errors.txt
+
+        echo "Rolling back traffic to 0 percent..."
+        gcloud beta run services update-traffic $_SERVICE_NAME --region $_REGION --platform managed --to-tags canary=0
+
+        echo "Exiting with an error!"
+        exit 1
+      else
+        echo "No errors"
+      fi
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: Rollout50Percent
+    entrypoint: gcloud
+    args:
+      [
+        'beta',
+        'run',
+        'services',
+        'update-traffic',
+        '$_SERVICE_NAME',
+        '--region=$_REGION',
+        '--platform=managed',
+        '--to-tags',
+        'canary=50'
+      ]
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: Wait50Percent
+    entrypoint: 'bash'
+    args:
+    - '-eEuo'
+    - 'pipefail'
+    - '-c'
+    - |-
+      echo 'Waiting for 60 seconds...'
+      sleep 60
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: CheckErrors50Percent
+    entrypoint: 'bash'
+    args:
+    - '-eEuo'
+    - 'pipefail'
+    - '-c'
+    - |-
+      export REVISION_NAME=$(gcloud beta run revisions list --region=$_REGION --platform managed --filter '$_SERVICE_NAME' | head -n 2 | grep -o '$_SERVICE_NAME-[^ ]*')
+      echo "Revision name is $$REVISION_NAME"
+
+      mkdir -p ~/bin && curl -sSL -o ~/bin/jq https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64 && chmod +x ~/bin/jq
+      export PATH=$$PATH:~/bin
+      jq --version
+
+      gcloud logging read \
+      "resource.type=cloud_run_revision \
+      AND resource.labels.service_name=$_SERVICE_NAME \
+      AND resource.labels.revision_name=$$REVISION_NAME \
+      AND severity>=ERROR" \
+      --project $PROJECT_ID \
+      --limit 10 \
+      --format=json | jq -r .[].resource.labels.revision_name > errors.txt
+
+      if (test $(wc -l < errors.txt) -gt 0); then
+        echo "Found errors"
+        cat errors.txt
+
+        echo "Rolling back traffic to 0 percent..."
+        gcloud beta run services update-traffic $_SERVICE_NAME --region $_REGION --platform managed --to-tags canary=0
+
+        echo "Exiting with an error!"
+        exit 1
+      else
+        echo "No errors"
+      fi
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: UpdateTag
+    entrypoint: gcloud
+    args:
+      [
+        'beta',
+        'run',
+        'services',
+        'update',
+        '$_SERVICE_NAME',
+        '--region=$_REGION',
+        '--platform=managed',
+        '--tag=latest'
+      ]
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: Release
+    entrypoint: gcloud
+    args:
+      [
+        'beta',
+        'run',
+        'services',
+        'update-traffic',
+        '$_SERVICE_NAME',
+        '--region=$_REGION',
+        '--platform=managed',
+        '--to-tags',
+        'latest=100'
+      ]
+
+substitutions:
+  _REGION: 'europe-north1'
+  _SERVICE_NAME: 'webserver'
+  _CANARY_URL: 'https://canary---webserver-{LONG_RANDOM_ID}.a.run.app' # EDIT THIS TO YOUR CANARY URL AFTER FIRST DEPLOYMENT

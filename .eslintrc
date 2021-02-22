@@ -1,0 +1,33 @@
+{
+  "parser": "@typescript-eslint/parser",
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/eslint-recommended",
+    "plugin:@typescript-eslint/recommended",
+    "prettier"
+  ],
+  "parserOptions": {
+    "ecmaVersion": 2021,
+    "sourceType": "module",
+    "parser": "@typescript-eslint/parser",
+    "endOfLine": "auto"
+  },
+  "rules": {
+    "@typescript-eslint/no-explicit-any": ["off"],
+    "@typescript-eslint/ban-ts-comment": ["warn"],
+    "complexity": ["warn", { "max": 9 }],
+    "no-async-promise-executor": ["off"]
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.mjs", "**/*.test.js", "**/*.test.ts"],
+      "env": {
+        "jest": true
+      }
+    }
+  ],
+  "env": {
+    "node": true,
+    "es6": true
+  }
+}

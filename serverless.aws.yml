@@ -1,0 +1,50 @@
+service: canary-demo
+
+frameworkVersion: '2'
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  memorySize: 1024
+  logRetentionInDays: 7
+  deploymentBucket:
+    blockPublicAccess: true
+    serverSideEncryption: AES256
+  region: ${opt:region, 'eu-north-1'}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - codedeploy:*
+      Resource:
+        - "*"
+
+custom:
+  alerts:
+    dashboards: true
+
+plugins:
+  - serverless-offline
+  - serverless-plugin-aws-alerts
+  - serverless-plugin-canary-deployments
+
+functions:
+  handler:
+    handler: aws/src/index.handler
+    events:
+      - http:
+          path: handler
+          method: GET
+    alarms:
+      - name: CanaryDemo
+        namespace: 'AWS/Lambda'
+        metric: Errors
+        threshold: 3
+        statistic: Minimum
+        period: 60
+        evaluationPeriods: 1
+        comparisonOperator: GreaterThanOrEqualToThreshold
+    deploymentSettings:
+      type: Canary10Percent5Minutes
+      alias: Live
+      alarms:
+        - HandlerCanaryDemoAlarm # The Canary Deployments plugin expects the logical ID of the CloudWatch alarms, which the Alerts plugin builds by concatenating the function name, the alarm name and the string "Alarm" in Pascal case.

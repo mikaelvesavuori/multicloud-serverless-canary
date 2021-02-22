@@ -1,0 +1,15 @@
+{
+  "name": "node-simple-webserver",
+  "version": "1.0.0",
+  "description": "Simple Node.js server ",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo Testing..."
+  },
+  "author": "Mikael Vesavuori",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.17.1"
+  }
+}

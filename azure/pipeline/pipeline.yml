@@ -1,0 +1,251 @@
+trigger:
+  branches:
+    include:
+      - master
+
+strategy:
+  matrix:
+    Windows_Node12:
+      imageName: 'vs2017-win2016'
+      node_version: 12.x
+
+variables:
+  - name: SERVICE_CONNECTION_NAME
+    value: service-connection-arm-pipeline
+  - name: SERVICE_NAME
+    value: canary-demo # Mapped to the base service name in serverless.yml
+  - name: APP_NAME
+    value: canary-demo
+  - name: RESOURCE_GROUP
+    value: canary-demo-1231 # This is a pre-created "production-specific" group
+  - name: PROD_SLOT
+    value: production
+  - name: SECONDARY_SLOT
+    value: canary
+  - name: CANARY_URL
+    value: https://canary-demo-canary.azurewebsites.net/api/handler
+  - name: FILEPATH
+    value: .serverless/${{ variables.SERVICE_NAME }}.zip
+pool:
+  vmImage: $(imageName)
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: 12.x #$(node_version)
+    displayName: 'Install Node.js'
+
+  - bash: |
+      set -euo pipefail
+
+      mkdir -p ~/bin && curl -sSL -o ~/bin/jq https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64 && chmod +x ~/bin/jq
+      export PATH=$PATH:~/bin
+      jq --version
+
+      npm install -g serverless
+      npm ci
+    displayName: 'Install'
+
+  - bash: |
+      set -euo pipefail
+      npm test
+    displayName: 'Test'
+
+  - bash: |
+      #echo 'Deploying application to secondary ("staging") slot: "${{ variables['Build.SourceBranchName'] }}"'
+      echo 'Packaging application for deployment...'
+      sls package --service ${{ variables.SERVICE_NAME}} --config serverless.azure.yml
+    displayName: 'Package'
+
+  - task: AzureCLI@2
+    displayName: 'Deploy'
+    inputs:
+      azureSubscription: ${{ variables.SERVICE_CONNECTION_NAME }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az functionapp deployment source config-zip \
+          --resource-group $RESOURCE_GROUP \
+          --slot $SECONDARY_SLOT \
+          --name $SERVICE_NAME \
+          --src $FILEPATH
+    env:
+      AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY: $(AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY)
+      AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
+      AZURE_TENANT_ID: $(AZURE_TENANT_ID)
+      AZURE_CLIENT_ID: $(AZURE_CLIENT_ID)
+      AZURE_CLIENT_SECRET: $(AZURE_CLIENT_SECRET)
+      FUNCTIONS_WORKER_RUNTIME: $(FUNCTIONS_WORKER_RUNTIME)
+      WEBSITE_RUN_FROM_PACKAGE: 1
+
+  - bash: |
+      echo 'Waiting for 10 seconds...'
+      sleep 10
+    displayName: 'Wait'
+
+  - bash: |
+      set -euo pipefail
+      if curl -sL --fail ${{ variables.CANARY_URL}} -o /dev/null; then
+        echo "Success"
+      else
+        echo "Fail"
+        exit 1
+      fi
+    displayName: 'SmokeTest'
+
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: ${{ variables.SERVICE_CONNECTION_NAME }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+
+        # Set timezone to what is used in Azure
+        export TZ=":Europe/London" date
+        echo $TZ
+
+        export START_TIME=$(date -d '-1 minute' '+%FT%T+00:00')
+        export END_TIME=$(date '+%FT%T+00:00')
+
+        echo $START_TIME
+        echo $END_TIME
+
+        # Cleanup files
+        rm -f errors.txt
+        rm -f logs.txt
+        rm -f fixed_errors.txt
+
+        az monitor metrics list \
+          --resource $APP_NAME \
+          --resource-group $RG_NAME \
+          --resource-type Microsoft.Web/sites \
+          --metric "Http5xx" \
+          --interval "PT1M" \
+          --start-time $START_TIME \
+          --end-time $END_TIME >> logs.txt
+
+        # Get errors from logs
+        jq '.value[0].timeseries[0].data[] | .total' logs.txt >> errors.txt
+        # Remove zeroes
+        sed -i 's/0//gi' errors.txt
+        # Remove empty lines
+        sed '/^[[:space:]]*$/d' errors.txt | sed '/^\s*$/d' | sed '/^$/d' | sed -n '/^\s*$/!p' >> fixed_errors.txt
+
+        if (test $(wc -l < fixed_errors.txt) -gt 0); then
+          echo "Found errors"
+          cat fixed_errors.txt
+
+          echo "Rolling back traffic to 0 percent..."
+          az webapp traffic-routing clear --resource-group $RG_NAME --name $APP_NAME
+
+          echo "Exiting..."
+          exit 1
+        else
+          echo "No errors"
+        fi
+    env:
+      SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
+      RG_NAME: ${{ variables.RESOURCE_GROUP }}
+      APP_NAME: ${{ variables.APP_NAME }}
+    displayName: 'CheckErrors'
+
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: ${{ variables.SERVICE_CONNECTION_NAME }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+        az webapp traffic-routing set --distribution $SECONDARY_SLOT=50 --resource-group $RG_NAME --name $APP_NAME
+    displayName: 'Rollout50Percent'
+    env:
+      SECONDARY_SLOT: ${{ variables.SECONDARY_SLOT }}
+      RG_NAME: ${{ variables.RESOURCE_GROUP }}
+      APP_NAME: ${{ variables.APP_NAME }}
+
+  - bash: |
+      echo 'Waiting for 60 seconds...'
+      sleep 60
+    displayName: 'Wait50Percent'
+
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: ${{ variables.SERVICE_CONNECTION_NAME }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+
+        # Set timezone to what is used in Azure
+        export TZ=":Europe/London" date
+        echo $TZ
+
+        export START_TIME=$(date -d '-1 minute' '+%FT%T+00:00')
+        export END_TIME=$(date '+%FT%T+00:00')
+
+        echo $START_TIME
+        echo $END_TIME
+
+        # Cleanup files
+        rm -f errors.txt
+        rm -f logs.txt
+        rm -f fixed_errors.txt
+
+        az monitor metrics list \
+          --resource $APP_NAME \
+          --resource-group $RG_NAME \
+          --resource-type Microsoft.Web/sites \
+          --metric "Http5xx" \
+          --interval "PT1M" \
+          --start-time $START_TIME \
+          --end-time $END_TIME >> logs.txt
+
+        # Get errors from logs
+        jq '.value[0].timeseries[0].data[] | .total' logs.txt >> errors.txt
+        # Remove zeroes
+        sed -i 's/0//gi' errors.txt
+        # Remove empty lines
+        sed '/^[[:space:]]*$/d' errors.txt | sed '/^\s*$/d' | sed '/^$/d' | sed -n '/^\s*$/!p' >> fixed_errors.txt
+
+        if (test $(wc -l < fixed_errors.txt) -gt 0); then
+          echo "Found errors"
+          cat fixed_errors.txt
+
+          echo "Rolling back traffic to 0 percent..."
+          az webapp traffic-routing clear --resource-group $RG_NAME --name $APP_NAME
+
+          echo "Exiting..."
+          exit 1
+        else
+          echo "No errors"
+        fi
+    env:
+      SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
+      RG_NAME: ${{ variables.RESOURCE_GROUP }}
+      APP_NAME: ${{ variables.APP_NAME }}
+    displayName: 'CheckErrors50Percent'
+
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: ${{ variables.SERVICE_CONNECTION_NAME }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az functionapp deployment slot swap \
+          --resource-group $RESOURCE_GROUP \
+          --name $SERVICE_NAME \
+          --slot $SECONDARY_SLOT \
+          --target-slot $PROD_SLOT
+    displayName: 'Update (switch slot)'
+
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: ${{ variables.SERVICE_CONNECTION_NAME }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        az webapp traffic-routing clear --resource-group $RG_NAME --name $APP_NAME
+    displayName: 'Release (all traffic to production)'
+    env:
+      RG_NAME: ${{ variables.RESOURCE_GROUP }}

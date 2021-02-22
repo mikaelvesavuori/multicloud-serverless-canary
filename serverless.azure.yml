@@ -1,0 +1,46 @@
+service: canary-demo
+
+frameworkVersion: '2'
+
+provider:
+  name: azure
+  runtime: nodejs12
+  region: ${opt:region, 'West Europe'}
+  stage: ${opt:stage, 'prod'}
+  type: 'Standard' # 'Standard' or 'Premium' for deployment slots with traffic shifting; 'Consumption' if you are OK without traffic shifting
+
+  os: Windows #linux
+  resourceGroup: ${opt:rg, self:custom.config.resourceGroup}
+  appInsights:
+    name: ${self:custom.config.appInsightsName}
+  functionApp:
+    name: ${self:custom.config.functionAppName}
+
+custom:
+  config:
+    resourceGroup: canary-demo
+    appInsightsName: canary-demo-insights
+    functionAppName: canary-demo
+
+plugins:
+  - serverless-azure-functions
+
+package:
+  exclude:
+    - local.settings.json
+    - .vscode/**
+
+functions:
+  handler:
+    handler: azure/src/index.handler
+    events:
+      - http: true
+        x-azure-settings:
+          name: req
+          methods:
+            - GET
+          authLevel: anonymous
+      - http: true
+        x-azure-settings:
+          name: $return
+          direction: out

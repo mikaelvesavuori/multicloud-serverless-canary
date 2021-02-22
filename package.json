@@ -1,0 +1,41 @@
+{
+  "name": "multicloud-deployment-strategies",
+  "version": "1.0.0",
+  "description": "Ever wondered how you _actually_ do gradual canary rollouts with AWS, Azure or GCP's serverless platforms? Look no further.",
+  "main": "index.js",
+  "scripts": {
+    "dev:aws": "sls offline --config serverless.aws.yml",
+    "dev:azure": "sls offline --config serverless.azure.yml",
+    "dev:gcp": "node src/index.js",
+    "init:azure": "sh azure/scripts/init.sh",
+    "init:gcp": "sh gcp/scripts/init.sh",
+    "deploy:aws": "sh aws/scripts/deploy.sh",
+    "deploy:azure": "sh azure/scripts/deploy.sh",
+    "deploy:gcp": "sh gcp/scripts/deploy.sh",
+    "teardown:aws": "sh aws/scripts/teardown.sh",
+    "teardown:azure": "sh azure/scripts/teardown.sh",
+    "teardown:gcp": "sh gcp/scripts/teardown.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikaelvesavuori/multicloud-deployment-strategies.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mikaelvesavuori/multicloud-deployment-strategies/issues"
+  },
+  "homepage": "https://github.com/mikaelvesavuori/multicloud-deployment-strategies#readme",
+  "devDependencies": {
+    "azure-functions-core-tools": "^3.0.3284",
+    "eslint": "^7.20.0",
+    "eslint-config-prettier": "^7.2.0",
+    "prettier": "^2.2.1",
+    "serverless": "^2.25.2",
+    "serverless-azure-functions": "^2.1.0",
+    "serverless-offline": "^6.8.0",
+    "serverless-plugin-aws-alerts": "^1.7.1",
+    "serverless-plugin-canary-deployments": "^0.5.0"
+  }
+}
