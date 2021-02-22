@@ -149,10 +149,6 @@ Serverless ("Consumption") plans offer a single deployment slot, but it won't of
 
 You will also need to manually create a service connection (Azure RM, 'automatic' type) called `service-connection-arm-pipeline` and authorize it after running your first deployment.
 
-## Permissions
-
-You will need to give your Cloud Build service account rights to access Logging.
-
 ## References
 
 ### Blue/green and canary
