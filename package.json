@@ -1,7 +1,7 @@
 {
   "name": "multicloud-deployment-strategies",
   "version": "1.0.0",
-  "description": "Ever wondered how you _actually_ do gradual canary rollouts with AWS, Azure or GCP's serverless platforms? Look no further.",
+  "description": "Ever wondered how you actually do gradual canary rollouts with AWS, Azure or GCP's serverless platforms? Look no further.",
   "main": "index.js",
   "scripts": {
     "dev:aws": "sls offline --config serverless.aws.yml",

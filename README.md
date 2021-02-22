@@ -1,4 +1,4 @@
-# Multi-cloud blue/green deployment on serverless platforms
+# Multi-cloud canary deployment on serverless platforms
 
 Ever wondered how you _actually_ do gradual canary rollouts with AWS, Azure or GCP's serverless platforms? Look no further.
 
