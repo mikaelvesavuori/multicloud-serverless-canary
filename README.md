@@ -28,11 +28,11 @@ Run `npm run dev:aws`.
 
 #### Azure
 
-Run `npm run dev:aws`.
+Run `npm run dev:azure`.
 
 #### GCP
 
-Run `npm run dev:aws`.
+Run `npm run dev:gcp`.
 
 ### Initialize project
 
@@ -131,9 +131,9 @@ Finally, update `_CANARY_URL` in `gcp/pipeline/cloudbuild.yaml` to your canary U
 
 ### Amazon Web Services
 
-Uses Serverless Framework to deploy the application, with CodeDeploy under the hood to manage traffic and check for any reported errors.
+Uses Serverless Framework to deploy the application, with CodeDeploy under the hood to manage traffic and check for any reported errors. This variant is very similar to the one presented at [Serverless Framework's blog](https://www.serverless.com/blog/manage-canary-deployments-lambda-functions-serverless-framework).
 
-This variant is simplified versus the other two. This does not use a specific CI script (but you could do steps in for example CodeBuild), because there is already fairly good "off-the-shelf" support with Serverless Framework and the few plugins needed to get canaries working.
+The AWS canary is simplified versus the other two. This does not use a specific CI script (but you could do steps in for example CodeBuild), because there is already fairly good "off-the-shelf" support with Serverless Framework and the few plugins needed to get canaries working.
 
 The canary will first receive 10% of all traffic, then after 5 minutes (if no errors are reported), it will get all traffic routed to it. While deploying, you can see additional information in the CodeDeploy view in the AWS console.
 
