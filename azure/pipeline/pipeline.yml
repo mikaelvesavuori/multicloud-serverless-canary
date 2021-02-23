@@ -17,13 +17,13 @@ variables:
   - name: APP_NAME
     value: canary-demo
   - name: RESOURCE_GROUP
-    value: canary-demo-1231 # This is a pre-created "production-specific" group
+    value: canary-demo
   - name: PROD_SLOT
     value: production
   - name: SECONDARY_SLOT
     value: canary
   - name: CANARY_URL
-    value: https://canary-demo-canary.azurewebsites.net/api/handler
+    value: https://canary-demo-canary.azurewebsites.net/api/handler # Example
   - name: FILEPATH
     value: .serverless/${{ variables.SERVICE_NAME }}.zip
 pool:
